@@ -5,12 +5,15 @@ on: [workflow_dispatch]
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
       - name: Download ngrok
         run: |
           Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
-          Expand-Archive ngrok.zip
-          .\ngrok\ngrok.exe authtoken 2zpb8Bfpgzl29wk9oht7yoYgJ57_4vTfEnEjmYBXxgFUHDUna
+          Expand-Archive -Path ngrok.zip -DestinationPath .
+          $ngrok = Get-ChildItem -Recurse -Filter ngrok.exe | Select-Object -First 1
+          & $ngrok.FullName authtoken "${{ secrets.NGROK_AUTH_TOKEN }}"
+        shell: pwsh
 
       - name: Enable RDP
         run: |
@@ -18,4 +21,26 @@ jobs:
           net localgroup administrators kamel123 /add
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          ./ngrok.exe tcp 3389
+          $ngrok = Get-ChildItem -Recurse -Filter ngrok.exe | Select-Object -First 1
+          Start-Process -FilePath $ngrok.FullName -ArgumentList "tcp 3389"
+        shell: pwsh
+
+      - name: Print RDP URL
+        run: |
+          Start-Sleep -Seconds 10
+          $maxAttempts = 10
+          for ($i = 0; $i -lt $maxAttempts; $i++) {
+              try {
+                  $res = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4040/api/tunnels
+                  $json = $res.Content | ConvertFrom-Json
+                  Write-Host "`n🔗 RDP Tunnel URL: $($json.tunnels[0].public_url)`n"
+                  break
+              } catch {
+                  Start-Sleep -Seconds 3
+              }
+          }
+        shell: pwsh
+
+      - name: Keep session alive
+        run: Start-Sleep -Seconds 21600
+        shell: pwsh
