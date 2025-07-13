@@ -1,4 +1,4 @@
-name: RDP over Ngrok
+name: RDP over ngrok
 
 on: [workflow_dispatch]
 
@@ -7,14 +7,14 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: 🔽 Download & Setup ngrok
+      - name: 🔽 Download & Auth ngrok
         run: |
           Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
           Expand-Archive ngrok.zip -DestinationPath .
-          & ".\ngrok.exe" authtoken "${{ secrets.NGROK_AUTH_TOKEN }}"
+          .\ngrok.exe authtoken "${{ secrets.NGROK_AUTH_TOKEN }}"
         shell: pwsh
 
-      - name: 🧑‍💻 Enable RDP and Create User
+      - name: 🧑‍💻 Enable RDP and Add User
         run: |
           net user kamel123 MyStrong123 /add
           net localgroup administrators kamel123 /add
@@ -22,13 +22,19 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         shell: pwsh
 
-      - name: 🚀 Start ngrok and show RDP URL
+      - name: 🚀 Start ngrok in foreground (block execution)
+        shell: pwsh
         run: |
-          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389"
+          Start-Job -ScriptBlock {
+            & ".\ngrok.exe" tcp 3389
+          } | Out-Null
+
           Start-Sleep -Seconds 10
-          $maxAttempts = 5
+
+          $maxAttempts = 10
           $attempt = 0
-          do {
+          $found = $false
+          while ($attempt -lt $maxAttempts -and -not $found) {
               try {
                   $response = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4040/api/tunnels
                   $json = $response.Content | ConvertFrom-Json
@@ -39,16 +45,12 @@ jobs:
                   Start-Sleep -Seconds 3
                   $attempt++
               }
-          } while (!$found -and $attempt -lt $maxAttempts)
+          }
 
-          if (!$found) {
+          if (-not $found) {
               Write-Error "❌ ngrok tunnel not found after multiple attempts."
               exit 1
           }
-        shell: pwsh
 
-      - name: 🕒 Keep session alive for 6 hours
-        run: |
-          Write-Host "🟢 RDP session is active. Use the above ngrok link."
+          Write-Host "🟢 RDP is ready. Session will remain active for 6 hours."
           Start-Sleep -Seconds 21600  # 6 hours
-        shell: pwsh
