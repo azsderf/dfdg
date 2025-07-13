@@ -1,4 +1,4 @@
-name: RDP over ngrok
+name: RDP over Ngrok (Stable)
 
 on: [workflow_dispatch]
 
@@ -7,43 +7,38 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: 🔽 Download & Auth ngrok
+      - name: 🔽 Download & Auth ngrok + Enable RDP + Show URL
+        shell: pwsh
         run: |
+          # تحميل ngrok
           Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
           Expand-Archive ngrok.zip -DestinationPath .
+          
+          # تفعيل ngrok بالتوكن من GitHub Secrets
           .\ngrok.exe authtoken "${{ secrets.NGROK_AUTH_TOKEN }}"
-        shell: pwsh
 
-      - name: 🧑‍💻 Enable RDP and Add User
-        run: |
+          # إعداد RDP
           net user kamel123 MyStrong123 /add
           net localgroup administrators kamel123 /add
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name 'fDenyTSConnections' -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        shell: pwsh
 
-      - name: 🚀 Start ngrok in foreground (block execution)
-        shell: pwsh
-        run: |
-          Start-Job -ScriptBlock {
-            & ".\ngrok.exe" tcp 3389
-          } | Out-Null
-
+          # تشغيل ngrok في المقدمة مع الالتقاط
+          Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389" -WindowStyle Hidden
           Start-Sleep -Seconds 10
 
-          $maxAttempts = 10
-          $attempt = 0
+          # محاولة جلب رابط ngrok
           $found = $false
-          while ($attempt -lt $maxAttempts -and -not $found) {
+          for ($i = 0; $i -lt 10; $i++) {
               try {
                   $response = Invoke-WebRequest -UseBasicParsing http://127.0.0.1:4040/api/tunnels
                   $json = $response.Content | ConvertFrom-Json
                   $publicUrl = $json.tunnels[0].public_url
-                  Write-Host "🔗 RDP Tunnel URL: $publicUrl"
+                  Write-Host "`n🔗 RDP Tunnel URL: $publicUrl`n"
                   $found = $true
+                  break
               } catch {
                   Start-Sleep -Seconds 3
-                  $attempt++
               }
           }
 
@@ -53,4 +48,4 @@ jobs:
           }
 
           Write-Host "🟢 RDP is ready. Session will remain active for 6 hours."
-          Start-Sleep -Seconds 21600  # 6 hours
+          Start-Sleep -Seconds 21600  # 6 ساعات
